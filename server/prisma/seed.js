@@ -1,4 +1,5 @@
 import "dotenv/config";
+import bcrypt from 'bcrypt';
 import { Pool } from "pg";
 import { PrismaPg } from "@prisma/adapter-pg";
 import { PrismaClient } from "../generated/prisma/client.js";
@@ -37,53 +38,54 @@ async function main() {
   }
 
   console.log('Seeding Users...');
+  const defaultPasswordHash = await bcrypt.hash('password123', 10);
   const usersData = [
     {
       name: 'System Admin',
       email: 'admin@transitops.com',
-      passwordHash: 'password123',
+      passwordHash: defaultPasswordHash,
       roleId: createdRoles['ADMIN'].id,
     },
     {
       name: 'Jane Fleet Manager',
       email: 'manager@transitops.com',
-      passwordHash: 'password123',
+      passwordHash: defaultPasswordHash,
       roleId: createdRoles['FLEET_MANAGER'].id,
     },
     {
       name: 'Alex Driver',
       email: 'driver.alex@transitops.com',
-      passwordHash: 'password123',
+      passwordHash: defaultPasswordHash,
       roleId: createdRoles['DRIVER'].id,
     },
     {
       name: 'Bob Driver',
       email: 'driver.bob@transitops.com',
-      passwordHash: 'password123',
+      passwordHash: defaultPasswordHash,
       roleId: createdRoles['DRIVER'].id,
     },
     {
       name: 'Charlie Driver',
       email: 'driver.charlie@transitops.com',
-      passwordHash: 'password123',
+      passwordHash: defaultPasswordHash,
       roleId: createdRoles['DRIVER'].id,
     },
     {
       name: 'Dave Driver',
       email: 'driver.dave@transitops.com',
-      passwordHash: 'password123',
+      passwordHash: defaultPasswordHash,
       roleId: createdRoles['DRIVER'].id,
     },
     {
       name: 'Sarah Safety Officer',
       email: 'safety@transitops.com',
-      passwordHash: 'password123',
+      passwordHash: defaultPasswordHash,
       roleId: createdRoles['SAFETY_OFFICER'].id,
     },
     {
       name: 'Frank Financial Analyst',
       email: 'finance@transitops.com',
-      passwordHash: 'password123',
+      passwordHash: defaultPasswordHash,
       roleId: createdRoles['FINANCIAL_ANALYST'].id,
     },
   ];
