@@ -1,11 +1,7 @@
-import './App.css'
+import Dashboard from "./components/dashboard/Dashboard";
 
 function App() {
-  return (
-    <>
-      <h1>welcome to odoo hackathon</h1>
-    </>
-  )
+  return <Dashboard />;
 }
 
-export default App
+export default App;

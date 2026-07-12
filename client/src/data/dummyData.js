@@ -1,0 +1,58 @@
+export const dashboardStats = [
+  {
+    title: "Active Vehicles",
+    value: 120,
+    icon: "🚚",
+    color: "bg-blue-500",
+    change: "+12%",
+  },
+  {
+    title: "Available Vehicles",
+    value: 85,
+    icon: "🟢",
+    color: "bg-green-500",
+    change: "+5%",
+  },
+  {
+    title: "Maintenance",
+    value: 15,
+    icon: "🔧",
+    color: "bg-yellow-500",
+    change: "-2%",
+  },
+  {
+    title: "Active Trips",
+    value: 42,
+    icon: "🛣️",
+    color: "bg-purple-500",
+    change: "+8%",
+  },
+  {
+    title: "Pending Trips",
+    value: 10,
+    icon: "⏳",
+    color: "bg-orange-500",
+    change: "-4%",
+  },
+  {
+    title: "Drivers On Duty",
+    value: 91,
+    icon: "👨‍✈️",
+    color: "bg-cyan-500",
+    change: "+3%",
+  },
+  {
+    title: "Fleet Utilization",
+    value: "78%",
+    icon: "📈",
+    color: "bg-red-500",
+    change: "+6%",
+  },
+  {
+    title: "Total Vehicles",
+    value: 150,
+    icon: "🚛",
+    color: "bg-indigo-500",
+    change: "+1%",
+  },
+];
