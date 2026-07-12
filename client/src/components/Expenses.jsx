@@ -1,13 +1,14 @@
 import React, { useState, useEffect } from 'react';
 import { fmt } from '../utils/helpers';
-import { Store } from '../utils/store';
+import { api } from '../utils/api';
 
 const EXPENSE_CATEGORIES = ['Toll', 'Maintenance', 'Repair', 'Permit', 'Miscellaneous'];
 
 export default function Expenses({
-  fuelLogs, setFuelLogs,
-  expenses, setExpenses,
+  fuelLogs,
+  expenses,
   vehicles,
+  refreshData,
   currentUser, toast, confirmAction
 }) {
   const [activeTab, setActiveTab] = useState('fuel');
@@ -68,90 +69,116 @@ export default function Expenses({
     return data;
   };
 
-  const handleSaveFuel = () => {
+  const handleSaveFuel = async () => {
     const vehicleId = flVehicleId;
     const date = flDate;
     const liters = parseFloat(flLiters) || 0;
     const rate = parseFloat(flRate) || 0;
     const odometer = parseFloat(flOdometer) || 0;
 
-    if (!vehicleId || !date || liters <= 0) {
-      toast('Please fill all required fields (vehicle, date, liters).', 'error');
+    if (!vehicleId || !date) {
+      toast('Please fill all required fields.', 'error');
       return;
     }
 
-    const newLog = {
-      id: Store.genId(),
-      vehicleId,
-      date,
-      liters,
-      costPerLiter: rate,
-      totalCost: liters * rate,
-      odometer: odometer || undefined
-    };
+    if (liters <= 0) {
+      toast('Fuel volume must be greater than 0 liters.', 'error');
+      return;
+    }
 
-    const updatedLogs = [...fuelLogs, newLog];
-    setFuelLogs(updatedLogs);
-    Store.set('fuelLogs', updatedLogs);
-    toast('Fuel log saved!', 'success');
+    if (rate <= 0) {
+      toast('Fuel rate must be greater than 0.', 'error');
+      return;
+    }
 
-    // Reset Form
-    setFlVehicleId('');
-    setFlLiters('');
-    setFlOdometer('');
+    if (parseFloat(flOdometer) < 0) {
+      toast('Odometer reading cannot be negative.', 'error');
+      return;
+    }
+
+    try {
+      const payload = {
+        vehicleId,
+        date,
+        liters,
+        totalCost: liters * rate,
+        odometer: odometer || undefined
+      };
+      await api.createFuelLog(payload);
+      toast('Fuel log saved!', 'success');
+      await refreshData();
+
+      // Reset Form
+      setFlVehicleId('');
+      setFlLiters('');
+      setFlOdometer('');
+    } catch (err) {
+      toast(err.message, 'error');
+    }
   };
 
   const handleDeleteFuel = async (id) => {
     const ok = await confirmAction('Delete this fuel log?');
     if (!ok) return;
 
-    const updatedLogs = fuelLogs.filter(x => x.id !== id);
-    setFuelLogs(updatedLogs);
-    Store.set('fuelLogs', updatedLogs);
-    toast('Fuel log deleted.', 'warn');
+    try {
+      await api.deleteFuelLog(id);
+      toast('Fuel log deleted.', 'warn');
+      await refreshData();
+    } catch (err) {
+      toast(err.message, 'error');
+    }
   };
 
-  const handleSaveExpense = () => {
+  const handleSaveExpense = async () => {
     const vehicleId = expVehicleId;
     const category = expCategory;
     const amount = parseFloat(expAmount) || 0;
     const date = expDate;
     const notes = expNotes.trim();
 
-    if (!vehicleId || !category || amount <= 0 || !date) {
+    if (!vehicleId || !category || !date) {
       toast('Please fill all required fields.', 'error');
       return;
     }
 
-    const newExpense = {
-      id: Store.genId(),
-      vehicleId,
-      category,
-      amount,
-      date,
-      notes
-    };
+    if (amount <= 0) {
+      toast('Expense amount must be greater than 0.', 'error');
+      return;
+    }
+    try {
+      const payload = {
+        vehicleId,
+        category,
+        amount,
+        date,
+        notes
+      };
+      await api.createExpense(payload);
+      toast('Expense saved!', 'success');
+      await refreshData();
 
-    const updatedExpenses = [...expenses, newExpense];
-    setExpenses(updatedExpenses);
-    Store.set('expenses', updatedExpenses);
-    toast('Expense saved!', 'success');
-
-    // Reset Form
-    setExpVehicleId('');
-    setExpCategory('');
-    setExpAmount('');
-    setExpNotes('');
+      // Reset Form
+      setExpVehicleId('');
+      setExpCategory('');
+      setExpAmount('');
+      setExpNotes('');
+    } catch (err) {
+      toast(err.message, 'error');
+    }
   };
 
   const handleDeleteExpense = async (id) => {
     const ok = await confirmAction('Delete this expense record?');
     if (!ok) return;
 
-    const updatedExpenses = expenses.filter(x => x.id !== id);
-    setExpenses(updatedExpenses);
-    Store.set('expenses', updatedExpenses);
-    toast('Expense deleted.', 'warn');
+    try {
+      await api.deleteExpense(id);
+      toast('Expense deleted.', 'warn');
+      await refreshData();
+    } catch (err) {
+      toast(err.message, 'error');
+    }
   };
 
   const filteredFuel = getFilteredFuelLogs();

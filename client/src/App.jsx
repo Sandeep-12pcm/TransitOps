@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Store } from './utils/store';
-import { StatusBadge, licenseStatus } from './utils/helpers';
+import { api } from './utils/api';
 import Dashboard from './components/Dashboard';
 import Vehicles from './components/Vehicles';
 import Drivers from './components/Drivers';
@@ -8,6 +8,7 @@ import Trips from './components/Trips';
 import Maintenance from './components/Maintenance';
 import Expenses from './components/Expenses';
 import Reports from './components/Reports';
+import Login from './components/Login';
 
 const PAGES = {
   dashboard: { title: 'Dashboard', subtitle: 'Operational overview & KPIs', icon: '📊', permission: 'dashboard' },
@@ -48,9 +49,9 @@ export default function App() {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
 
   // Seeding state & user roles loading
-  const [users, setUsers] = useState([]);
   const [currentUser, setCurrentUser] = useState(null);
   const [activePage, setActivePage] = useState('dashboard');
+  const [booting, setBooting] = useState(true);
 
   // Core Data Lists
   const [vehicles, setVehicles] = useState([]);
@@ -70,24 +71,60 @@ export default function App() {
     resolve: null
   });
 
+  // Toast Notification Helper
+  const toast = (msg, type = 'info', duration = 3500) => {
+    const id = Store.genId();
+    setToasts(prev => [...prev, { id, msg, type }]);
+    setTimeout(() => {
+      setToasts(prev => prev.map(t => t.id === id ? { ...t, fadeOut: true } : t));
+      setTimeout(() => {
+        setToasts(prev => prev.filter(t => t.id !== id));
+      }, 300);
+    }, duration);
+  };
+
+  // Fetch all data from backend API
+  const refreshData = async () => {
+    try {
+      const [vList, dList, tList, mList, fList, eList] = await Promise.all([
+        api.getVehicles(),
+        api.getDrivers(),
+        api.getTrips(),
+        api.getMaintenance(),
+        api.getFuelLogs(),
+        api.getExpenses()
+      ]);
+      setVehicles(vList);
+      setDrivers(dList);
+      setTrips(tList);
+      setMaintenance(mList);
+      setFuelLogs(fList);
+      setExpenses(eList);
+    } catch (err) {
+      toast('Failed to load data from server: ' + err.message, 'error');
+    }
+  };
+
   // Init Data and Seed
   useEffect(() => {
     Store.seed();
+    
+    // Check if token exists
+    const token = api.getToken();
+    const cachedUser = api.getUser();
 
-    const loadedUsers = Store.get('users');
-    setUsers(loadedUsers);
-
-    // Bypassing login: default to fleet manager
-    const fleetMgr = loadedUsers.find(u => u.role === 'fleet_manager') || loadedUsers[0];
-    setCurrentUser(fleetMgr);
-
-    setVehicles(Store.get('vehicles'));
-    setDrivers(Store.get('drivers'));
-    setTrips(Store.get('trips'));
-    setMaintenance(Store.get('maintenance'));
-    setFuelLogs(Store.get('fuelLogs'));
-    setExpenses(Store.get('expenses'));
+    if (token && cachedUser) {
+      setCurrentUser(cachedUser);
+    }
+    setBooting(false);
   }, []);
+
+  // Whenever currentUser is set, load data
+  useEffect(() => {
+    if (currentUser) {
+      refreshData();
+    }
+  }, [currentUser]);
 
   // Theme effect
   useEffect(() => {
@@ -101,18 +138,6 @@ export default function App() {
 
   const toggleTheme = () => {
     setTheme(prev => prev === 'light' ? 'dark' : 'light');
-  };
-
-  // Toast Notification Helper
-  const toast = (msg, type = 'info', duration = 3500) => {
-    const id = Store.genId();
-    setToasts(prev => [...prev, { id, msg, type }]);
-    setTimeout(() => {
-      setToasts(prev => prev.map(t => t.id === id ? { ...t, fadeOut: true } : t));
-      setTimeout(() => {
-        setToasts(prev => prev.filter(t => t.id !== id));
-      }, 300);
-    }, duration);
   };
 
   // Confirm Dialog Helper
@@ -133,24 +158,55 @@ export default function App() {
     setConfirmDialog({ isOpen: false, message: '', resolve: null });
   };
 
-  // Role Switcher Selection
-  const selectRole = (role) => {
-    const matchingUser = users.find(u => u.role === role);
-    if (matchingUser) {
-      setCurrentUser(matchingUser);
-      // Auto-redirect if page not allowed for new role
-      const allowedPages = PERMISSIONS[role] || [];
-      if (!allowedPages.includes(activePage)) {
-        setActivePage('dashboard');
-      }
-      toast(`Switched role to ${ROLE_LABELS[role]}`, 'info');
-    }
+  const handleLogout = async () => {
+    const ok = await confirmAction('Are you sure you want to sign out?');
+    if (!ok) return;
+    api.removeToken();
+    setCurrentUser(null);
+    setVehicles([]);
+    setDrivers([]);
+    setTrips([]);
+    setMaintenance([]);
+    setFuelLogs([]);
+    setExpenses([]);
+    toast('Signed out successfully.', 'info');
   };
 
   const canAccess = (page) => {
     if (!currentUser) return false;
     return (PERMISSIONS[currentUser.role] || []).includes(page);
   };
+
+  if (booting) {
+    return (
+      <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#9ca3c4', fontFamily: 'system-ui' }}>
+        <span>Loading TransitOps…</span>
+      </div>
+    );
+  }
+
+  // Render Login page if not authenticated
+  if (!currentUser) {
+    return (
+      <>
+        <Login setUser={setCurrentUser} toast={toast} />
+        {/* Toast Notifications */}
+        <div id="toast-container">
+          {toasts.map(t => (
+            <div key={t.id} className={`toast toast-${t.type} ${t.fadeOut ? 'fade-out' : ''}`}>
+              <span>
+                {t.type === 'success' && '✅'}
+                {t.type === 'error' && '❌'}
+                {t.type === 'warn' && '⚠️'}
+                {t.type === 'info' && 'ℹ️'}
+              </span>
+              <span>{t.msg}</span>
+            </div>
+          ))}
+        </div>
+      </>
+    );
+  }
 
   const initials = currentUser?.name
     ? currentUser.name.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase()
@@ -159,7 +215,7 @@ export default function App() {
   const roleColor = currentUser ? (ROLE_COLORS[currentUser.role] || '#888') : '#888';
 
   const renderActivePage = () => {
-    if (!canAccess(activePage)) return <div>Access Denied</div>;
+    if (!canAccess(activePage)) return <div style={{ padding: '24px', color: 'var(--danger)' }}>Access Denied for your role.</div>;
 
     switch (activePage) {
       case 'dashboard':
@@ -177,7 +233,7 @@ export default function App() {
         return (
           <Vehicles
             vehicles={vehicles}
-            setVehicles={setVehicles}
+            refreshData={refreshData}
             currentUser={currentUser}
             toast={toast}
             confirmAction={confirmAction}
@@ -187,7 +243,7 @@ export default function App() {
         return (
           <Drivers
             drivers={drivers}
-            setDrivers={setDrivers}
+            refreshData={refreshData}
             currentUser={currentUser}
             toast={toast}
             confirmAction={confirmAction}
@@ -197,13 +253,10 @@ export default function App() {
         return (
           <Trips
             trips={trips}
-            setTrips={setTrips}
             vehicles={vehicles}
-            setVehicles={setVehicles}
             drivers={drivers}
-            setDrivers={setDrivers}
             fuelLogs={fuelLogs}
-            setFuelLogs={setFuelLogs}
+            refreshData={refreshData}
             currentUser={currentUser}
             toast={toast}
             confirmAction={confirmAction}
@@ -213,9 +266,8 @@ export default function App() {
         return (
           <Maintenance
             maintenance={maintenance}
-            setMaintenance={setMaintenance}
             vehicles={vehicles}
-            setVehicles={setVehicles}
+            refreshData={refreshData}
             currentUser={currentUser}
             toast={toast}
             confirmAction={confirmAction}
@@ -225,10 +277,9 @@ export default function App() {
         return (
           <Expenses
             fuelLogs={fuelLogs}
-            setFuelLogs={setFuelLogs}
             expenses={expenses}
-            setExpenses={setExpenses}
             vehicles={vehicles}
+            refreshData={refreshData}
             currentUser={currentUser}
             toast={toast}
             confirmAction={confirmAction}
@@ -291,22 +342,11 @@ export default function App() {
           {navItems}
         </nav>
         <div className="sidebar-footer">
-          {/* Active Demo Role Switcher */}
-          <div className="form-group" style={{ marginBottom: '14px' }}>
-            <label className="form-label" style={{ fontSize: '9px', textTransform: 'uppercase', color: 'var(--text-3)' }}>Demo Role Switcher</label>
-            <select
-              className="form-control"
-              style={{ fontSize: '11px', padding: '6px 10px', background: 'var(--bg-3)', color: 'var(--text-1)' }}
-              value={currentUser?.role || ''}
-              onChange={(e) => selectRole(e.target.value)}
-            >
-              {Object.entries(ROLE_LABELS).map(([role, label]) => (
-                <option key={role} value={role}>{label}</option>
-              ))}
-            </select>
-          </div>
           <button className="theme-toggle" onClick={toggleTheme}>
             {theme === 'light' ? '🌙 Dark Mode' : '☀️ Light Mode'}
+          </button>
+          <button className="theme-toggle" onClick={handleLogout} style={{ borderTop: '1px solid var(--border)', marginTop: '8px', color: 'var(--danger)' }}>
+            🚪 Sign Out
           </button>
         </div>
       </nav>

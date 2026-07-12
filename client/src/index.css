@@ -622,6 +622,28 @@ select.filter-select:focus { border-color: var(--primary); }
 }
 .demo-fill-btn:hover { background: rgba(108,99,255,0.3); }
 
+@media (max-width: 440px) {
+  .login-card {
+    padding: 24px 16px;
+    box-shadow: none;
+    border: none;
+    background: transparent;
+  }
+  .demo-row {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 4px;
+    padding: 8px 0;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  }
+  .demo-row:last-child {
+    border-bottom: none;
+  }
+  .demo-fill-btn {
+    align-self: flex-end;
+    margin-top: -22px;
+  }
+}
 /* ============================================================
    EMPTY STATE
    ============================================================ */

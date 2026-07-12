@@ -1,12 +1,13 @@
 import React, { useState } from 'react';
 import { fmt, StatusBadge } from '../utils/helpers';
-import { Store } from '../utils/store';
+import { api } from '../utils/api';
 
 const TYPES = ['Oil Change', 'Tyre Rotation', 'Brake Service', 'Engine Overhaul', 'Electrical', 'Body Work', 'AC Service', 'Other'];
 
 export default function Maintenance({
-  maintenance, setMaintenance,
-  vehicles, setVehicles,
+  maintenance,
+  vehicles,
+  refreshData,
   currentUser, toast, confirmAction
 }) {
   const [searchQ, setSearchQ] = useState('');
@@ -74,7 +75,7 @@ export default function Maintenance({
     setEditId(null);
   };
 
-  const handleSave = () => {
+  const handleSave = async () => {
     const vehicleId = formVehicleId;
     const type = formType;
     const description = formDescription.trim();
@@ -86,76 +87,51 @@ export default function Maintenance({
       return;
     }
 
-    let updatedMaint;
-    let updatedVehicles = [...vehicles];
-
-    if (editId) {
-      updatedMaint = maintenance.map(m =>
-        m.id === editId
-          ? { ...m, vehicleId, type, description, cost, startDate }
-          : m
-      );
-      toast('Record updated!', 'success');
-    } else {
-      // Auto: set vehicle to In Shop
-      const vidx = updatedVehicles.findIndex(v => v.id === vehicleId);
-      if (vidx >= 0) {
-        const prevStatus = updatedVehicles[vidx].status;
-        updatedVehicles[vidx] = { ...updatedVehicles[vidx], status: 'In Shop' };
-        if (prevStatus !== 'In Shop') {
-          toast(`🔧 Vehicle set to "In Shop" automatically.`, 'warn');
-        }
-      }
-
-      updatedMaint = [
-        ...maintenance,
-        { id: Store.genId(), vehicleId, type, description, cost, startDate, status: 'Active', endDate: null }
-      ];
-      toast('Maintenance record created! Vehicle is now In Shop.', 'success');
+    if (parseFloat(formCost) < 0) {
+      toast('Estimated cost cannot be negative.', 'error');
+      return;
     }
 
-    setMaintenance(updatedMaint);
-    Store.set('maintenance', updatedMaint);
-    setVehicles(updatedVehicles);
-    Store.set('vehicles', updatedVehicles);
-    closeModal();
+    try {
+      const payload = { vehicleId, type, description, cost, startDate, status: 'Active' };
+      if (editId) {
+        await api.updateMaintenance(editId, payload);
+        toast('Record updated!', 'success');
+      } else {
+        await api.createMaintenance(payload);
+        toast('Maintenance record created! Vehicle is now In Shop.', 'success');
+      }
+      await refreshData();
+      closeModal();
+    } catch (err) {
+      toast(err.message, 'error');
+    }
   };
 
   const handleCloseMaintenance = async (id) => {
     const ok = await confirmAction('Close this maintenance record? Vehicle will be restored to Available (unless Retired).');
     if (!ok) return;
 
-    const m = maintenance.find(x => x.id === id);
-    if (!m) return;
-
-    const updatedMaint = maintenance.map(x =>
-      x.id === id
-        ? { ...x, status: 'Closed', endDate: new Date().toISOString().slice(0, 10) }
-        : x
-    );
-
-    const updatedVehicles = vehicles.map(v =>
-      v.id === m.vehicleId && v.status !== 'Retired'
-        ? { ...v, status: 'Available' }
-        : v
-    );
-
-    setMaintenance(updatedMaint);
-    Store.set('maintenance', updatedMaint);
-    setVehicles(updatedVehicles);
-    Store.set('vehicles', updatedVehicles);
-
-    toast('✅ Maintenance closed. Vehicle restored to Available.', 'success');
+    try {
+      await api.closeMaintenance(id);
+      toast('✅ Maintenance closed. Vehicle restored to Available.', 'success');
+      await refreshData();
+    } catch (err) {
+      toast(err.message, 'error');
+    }
   };
 
   const handleDelete = async (id) => {
     const ok = await confirmAction('Delete this maintenance record?');
     if (!ok) return;
 
-    const updatedMaint = maintenance.filter(x => x.id !== id);
-    setMaintenance(updatedMaint);
-    Store.set('maintenance', updatedMaint);
-    toast('Record deleted.', 'warn');
+    try {
+      await api.deleteMaintenance(id);
+      toast('Record deleted.', 'warn');
+      await refreshData();
+    } catch (err) {
+      toast(err.message, 'error');
+    }
   };
 
   const filteredData = getFilteredData();

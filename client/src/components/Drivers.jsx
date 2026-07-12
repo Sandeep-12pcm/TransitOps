@@ -1,11 +1,11 @@
 import React, { useState } from 'react';
 import { fmt, StatusBadge, licenseStatus } from '../utils/helpers';
-import { Store } from '../utils/store';
+import { api } from '../utils/api';
 
 const STATUSES = ['Available', 'On Trip', 'Off Duty', 'Suspended'];
 const CATEGORIES = ['LMV', 'HMV', 'HPMV', 'Transport'];
 
-export default function Drivers({ drivers, setDrivers, currentUser, toast, confirmAction }) {
+export default function Drivers({ drivers, refreshData, currentUser, toast, confirmAction }) {
   const [searchQ, setSearchQ] = useState('');
   const [filterStatus, setFilterStatus] = useState('');
   const [filterCategory, setFilterCategory] = useState('');
@@ -106,13 +106,13 @@ export default function Drivers({ drivers, setDrivers, currentUser, toast, confi
     setEditId(null);
   };
 
-  const handleSave = () => {
+  const handleSave = async () => {
     const name = formName.trim();
     const contact = formContact.trim();
     const licenseNo = formLicenseNo.trim().toUpperCase();
     const licenseCategory = formLicenseCategory;
     const licenseExpiry = formLicenseExpiry;
-    const safetyScore = parseInt(formSafetyScore) || 80;
+    const safetyScore = parseInt(formSafetyScore);
     const status = formStatus;
 
     if (!name || !contact || !licenseNo || !licenseCategory || !licenseExpiry) {
@@ -120,25 +120,44 @@ export default function Drivers({ drivers, setDrivers, currentUser, toast, confi
       return;
     }
 
-    let updatedDrivers;
-    if (editId) {
-      updatedDrivers = drivers.map(d =>
-        d.id === editId
-          ? { ...d, name, contact, licenseNo, licenseCategory, licenseExpiry, safetyScore, status }
-          : d
-      );
-      toast(`Driver "${name}" updated!`, 'success');
-    } else {
-      updatedDrivers = [
-        ...drivers,
-        { id: Store.genId(), name, contact, licenseNo, licenseCategory, licenseExpiry, safetyScore, status }
-      ];
-      toast(`Driver "${name}" added!`, 'success');
+    if (name.length < 2) {
+      toast('Name must be at least 2 characters.', 'error');
+      return;
     }
 
-    setDrivers(updatedDrivers);
-    Store.set('drivers', updatedDrivers);
-    closeModal();
+    // Contact: 10-digit mobile number
+    const contactRegex = /^[6-9]\d{9}$/;
+    if (!contactRegex.test(contact)) {
+      toast('Please enter a valid 10-digit contact number.', 'error');
+      return;
+    }
+
+    // License: Alphanumeric with spaces/dashes, 5-20 chars
+    const licenseRegex = /^[A-Z0-9 -]{5,20}$/i;
+    if (!licenseRegex.test(licenseNo)) {
+      toast('Invalid license number. Must be between 5 and 20 alphanumeric characters.', 'error');
+      return;
+    }
+
+    if (isNaN(safetyScore) || safetyScore < 0 || safetyScore > 100) {
+      toast('Safety score must be a number between 0 and 100.', 'error');
+      return;
+    }
+
+    try {
+      const payload = { name, contact, licenseNo, licenseCategory, licenseExpiry, safetyScore, status };
+      if (editId) {
+        await api.updateDriver(editId, payload);
+        toast(`Driver "${name}" updated!`, 'success');
+      } else {
+        await api.createDriver(payload);
+        toast(`Driver "${name}" added!`, 'success');
+      }
+      await refreshData();
+      closeModal();
+    } catch (err) {
+      toast(err.message, 'error');
+    }
   };
 
   const handleDelete = async (id) => {
@@ -147,10 +166,13 @@ export default function Drivers({ drivers, setDrivers, currentUser, toast, confi
     const ok = await confirmAction(`Delete driver "${d.name}"? This cannot be undone.`);
     if (!ok) return;
 
-    const updatedDrivers = drivers.filter(x => x.id !== id);
-    setDrivers(updatedDrivers);
-    Store.set('drivers', updatedDrivers);
-    toast(`Driver "${d.name}" removed.`, 'warn');
+    try {
+      await api.deleteDriver(id);
+      toast(`Driver "${d.name}" removed.`, 'warn');
+      await refreshData();
+    } catch (err) {
+      toast(err.message, 'error');
+    }
   };
 
   const filteredData = getFilteredData();

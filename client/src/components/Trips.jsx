@@ -1,14 +1,15 @@
 import React, { useState } from 'react';
 import { fmt, StatusBadge, licenseStatus } from '../utils/helpers';
-import { Store } from '../utils/store';
+import { api } from '../utils/api';
 
 const STATUSES = ['Draft', 'Dispatched', 'Completed', 'Cancelled'];
 
 export default function Trips({
-  trips, setTrips,
-  vehicles, setVehicles,
-  drivers, setDrivers,
-  fuelLogs, setFuelLogs,
+  trips,
+  vehicles,
+  drivers,
+  fuelLogs,
+  refreshData,
   currentUser, toast, confirmAction
 }) {
   const [searchQ, setSearchQ] = useState('');
@@ -165,7 +166,7 @@ export default function Trips({
     validateCargo(formVehicleId, w);
   };
 
-  const handleSave = () => {
+  const handleSave = async () => {
     const source = formSource.trim();
     const destination = formDestination.trim();
     const vehicleId = formVehicleId;
@@ -174,8 +175,28 @@ export default function Trips({
     const plannedDistance = parseFloat(formPlannedDistance) || 0;
     const revenue = parseFloat(formRevenue) || 0;
 
-    if (!source || !destination || !vehicleId || !driverId || cargoWeight <= 0) {
+    if (!source || !destination || !vehicleId || !driverId) {
       toast('Please fill all required fields.', 'error');
+      return;
+    }
+
+    if (source.length < 2 || destination.length < 2) {
+      toast('Source and destination must be at least 2 characters.', 'error');
+      return;
+    }
+
+    if (cargoWeight <= 0) {
+      toast('Cargo weight must be greater than 0 kg.', 'error');
+      return;
+    }
+
+    if (plannedDistance <= 0) {
+      toast('Planned distance must be greater than 0 km.', 'error');
+      return;
+    }
+
+    if (revenue < 0) {
+      toast('Revenue cannot be negative.', 'error');
       return;
     }
 
@@ -204,83 +225,43 @@ export default function Trips({
       return;
     }
 
-    let updatedTrips;
-    if (editId) {
-      updatedTrips = trips.map(t =>
-        t.id === editId
-          ? { ...t, source, destination, vehicleId, driverId, cargoWeight, plannedDistance, revenue }
-          : t
-      );
-      toast('Trip updated!', 'success');
-    } else {
-      updatedTrips = [
-        ...trips,
-        { id: Store.genId(), source, destination, vehicleId, driverId, cargoWeight, plannedDistance, revenue, status: 'Draft', createdAt: new Date().toISOString() }
-      ];
-      toast('Trip created as Draft!', 'success');
+    try {
+      const payload = { source, destination, vehicleId, driverId, cargoWeight, plannedDistance, revenue };
+      if (editId) {
+        await api.updateTrip(editId, payload);
+        toast('Trip updated!', 'success');
+      } else {
+        await api.createTrip(payload);
+        toast('Trip created as Draft!', 'success');
+      }
+      await refreshData();
+      closeModal();
+    } catch (err) {
+      toast(err.message, 'error');
     }
-
-    setTrips(updatedTrips);
-    Store.set('trips', updatedTrips);
-    closeModal();
   };
 
-  const handleDispatch = (id) => {
-    const trip = trips.find(t => t.id === id);
-    if (!trip) return;
-    const v = vehicles.find(x => x.id === trip.vehicleId);
-    const d = drivers.find(x => x.id === trip.driverId);
-    if (!v || v.status !== 'Available') { toast('Vehicle is no longer available!', 'error'); return; }
-    if (!d || d.status !== 'Available') { toast('Driver is no longer available!', 'error'); return; }
-    const ls = licenseStatus(d.licenseExpiry);
-    if (ls.label === 'Expired') { toast('Driver license is expired! Cannot dispatch.', 'error'); return; }
-    if (d.status === 'Suspended') { toast('Driver is suspended!', 'error'); return; }
-
-    const updatedTrips = trips.map(t =>
-      t.id === id ? { ...t, status: 'Dispatched', dispatchedAt: new Date().toISOString() } : t
-    );
-    const updatedVehicles = vehicles.map(x =>
-      x.id === trip.vehicleId ? { ...x, status: 'On Trip' } : x
-    );
-    const updatedDrivers = drivers.map(x =>
-      x.id === trip.driverId ? { ...x, status: 'On Trip' } : x
-    );
-
-    setTrips(updatedTrips);
-    Store.set('trips', updatedTrips);
-    setVehicles(updatedVehicles);
-    Store.set('vehicles', updatedVehicles);
-    setDrivers(updatedDrivers);
-    Store.set('drivers', updatedDrivers);
-
-    toast('🚀 Trip dispatched! Vehicle & driver are now On Trip.', 'success');
+  const handleDispatch = async (id) => {
+    try {
+      await api.dispatchTrip(id);
+      toast('🚀 Trip dispatched! Vehicle & driver are now On Trip.', 'success');
+      await refreshData();
+    } catch (err) {
+      toast(err.message, 'error');
+    }
   };
 
   const handleCancel = async (id) => {
     const ok = await confirmAction('Cancel this dispatched trip? Vehicle and driver will be restored to Available.');
     if (!ok) return;
 
-    const trip = trips.find(t => t.id === id);
-    if (!trip) return;
-
-    const updatedTrips = trips.map(t =>
-      t.id === id ? { ...t, status: 'Cancelled' } : t
-    );
-    const updatedVehicles = vehicles.map(v =>
-      v.id === trip.vehicleId ? { ...v, status: 'Available' } : v
-    );
-    const updatedDrivers = drivers.map(d =>
-      d.id === trip.driverId ? { ...d, status: 'Available' } : d
-    );
-
-    setTrips(updatedTrips);
-    Store.set('trips', updatedTrips);
-    setVehicles(updatedVehicles);
-    Store.set('vehicles', updatedVehicles);
-    setDrivers(updatedDrivers);
-    Store.set('drivers', updatedDrivers);
-
-    toast('Trip cancelled. Vehicle & driver restored to Available.', 'warn');
+    try {
+      await api.cancelTrip(id);
+      toast('Trip cancelled. Vehicle & driver restored to Available.', 'warn');
+      await refreshData();
+    } catch (err) {
+      toast(err.message, 'error');
+    }
   };
 
   const openCompleteModal = (id) => {
@@ -299,53 +280,42 @@ export default function Trips({
     setCompletingTripId(null);
   };
 
-  const submitComplete = () => {
+  const submitComplete = async () => {
     const id = completingTripId;
-    const actualDist = parseFloat(formActualDistance) || 0;
+    const actualDistance = parseFloat(formActualDistance) || 0;
     const fuelUsed = parseFloat(formFuelUsed) || 0;
     const fuelRate = parseFloat(formFuelRate) || 0;
     const endOdometer = parseFloat(formEndOdometer) || 0;
 
-    const trip = trips.find(t => t.id === id);
-    if (!trip) return;
-
-    const updatedTrips = trips.map(t =>
-      t.id === id ? { ...t, status: 'Completed', actualDistance: actualDist, fuelUsed, completedAt: new Date().toISOString() } : t
-    );
-    const updatedVehicles = vehicles.map(v =>
-      v.id === trip.vehicleId
-        ? { ...v, status: 'Available', odometer: endOdometer > 0 ? endOdometer : v.odometer }
-        : v
-    );
-    const updatedDrivers = drivers.map(d =>
-      d.id === trip.driverId ? { ...d, status: 'Available' } : d
-    );
-
-    setTrips(updatedTrips);
-    Store.set('trips', updatedTrips);
-    setVehicles(updatedVehicles);
-    Store.set('vehicles', updatedVehicles);
-    setDrivers(updatedDrivers);
-    Store.set('drivers', updatedDrivers);
-
-    if (fuelUsed > 0) {
-      const newFuelLog = {
-        id: Store.genId(),
-        vehicleId: trip.vehicleId,
-        tripId: id,
-        date: new Date().toISOString().slice(0, 10),
-        liters: fuelUsed,
-        costPerLiter: fuelRate,
-        totalCost: fuelUsed * fuelRate,
-        odometer: endOdometer
-      };
-      const updatedFuelLogs = [...fuelLogs, newFuelLog];
-      setFuelLogs(updatedFuelLogs);
-      Store.set('fuelLogs', updatedFuelLogs);
+    if (actualDistance <= 0) {
+      toast('Actual distance must be greater than 0 km.', 'error');
+      return;
+    }
+    if (parseFloat(formFuelUsed) < 0) {
+      toast('Fuel used cannot be negative.', 'error');
+      return;
+    }
+    if (fuelRate <= 0) {
+      toast('Fuel rate must be greater than 0.', 'error');
+      return;
     }
 
-    closeCompleteModal();
-    toast('✅ Trip completed! Vehicle and driver are now Available.', 'success');
+    const trip = trips.find(t => t.id === id);
+    const vehicle = vehicles.find(v => v.id === trip?.vehicleId);
+    const currentOdo = vehicle?.odometer || 0;
+    if (endOdometer <= currentOdo) {
+      toast(`End odometer (${endOdometer} km) must be greater than vehicle starting odometer (${currentOdo} km)!`, 'error');
+      return;
+    }
+
+    try {
+      await api.completeTrip(id, { actualDistance, fuelUsed, fuelRate, endOdometer });
+      toast('✅ Trip completed! Vehicle and driver are now Available.', 'success');
+      await refreshData();
+      closeCompleteModal();
+    } catch (err) {
+      toast(err.message, 'error');
+    }
   };
 
   const handleDeleteTrip = async (id) => {
@@ -354,10 +324,13 @@ export default function Trips({
     const ok = await confirmAction(`Delete trip "${t.source} → ${t.destination}"?`);
     if (!ok) return;
 
-    const updatedTrips = trips.filter(x => x.id !== id);
-    setTrips(updatedTrips);
-    Store.set('trips', updatedTrips);
-    toast('Trip deleted.', 'warn');
+    try {
+      await api.deleteTrip(id);
+      toast('Trip deleted.', 'warn');
+      await refreshData();
+    } catch (err) {
+      toast(err.message, 'error');
+    }
   };
 
   const filteredData = getFilteredData();

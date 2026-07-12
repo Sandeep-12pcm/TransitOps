@@ -1,12 +1,12 @@
 import React, { useState } from 'react';
 import { fmt, StatusBadge } from '../utils/helpers';
-import { Store } from '../utils/store';
+import { api } from '../utils/api';
 
 const TYPES = ['Mini Truck', 'Truck', 'Van', 'Pickup', 'Bus', 'Trailer', 'Other'];
 const STATUSES = ['Available', 'On Trip', 'In Shop', 'Retired'];
 const REGIONS = ['North', 'South', 'East', 'West', 'Central'];
 
-export default function Vehicles({ vehicles, setVehicles, currentUser, toast, confirmAction }) {
+export default function Vehicles({ vehicles, refreshData, currentUser, toast, confirmAction }) {
   const [searchQ, setSearchQ] = useState('');
   const [filterType, setFilterType] = useState('');
   const [filterStatus, setFilterStatus] = useState('');
@@ -103,8 +103,8 @@ export default function Vehicles({ vehicles, setVehicles, currentUser, toast, co
     setEditId(null);
   };
 
-  const handleSave = () => {
-    const regNo = formRegNo.trim().toUpperCase();
+  const handleSave = async () => {
+    const rawReg = formRegNo.trim();
     const name = formName.trim();
     const type = formType;
     const maxLoad = parseFloat(formMaxLoad) || 0;
@@ -113,12 +113,37 @@ export default function Vehicles({ vehicles, setVehicles, currentUser, toast, co
     const region = formRegion;
     const status = formStatus;
 
-    if (!regNo || !name || !type || maxLoad <= 0) {
-      toast('Please fill all required fields (Reg No, Name, Type, Max Load).', 'error');
+    if (!rawReg || !name || !type) {
+      toast('Please fill all required fields.', 'error');
       return;
     }
 
-    // Unique reg check
+    // Reg No format validation: Indian plate regex
+    const regNoRegex = /^[A-Z]{2}[ -]?[0-9]{2}[ -]?[A-Z]{1,2}[ -]?[0-9]{4}$/i;
+    if (!regNoRegex.test(rawReg)) {
+      setRegNoErr('Invalid format. Example: MH-01-AA-1234');
+      toast('Registration number format is invalid!', 'error');
+      return;
+    }
+
+    // Auto-normalize: MH01AA1234 -> MH-01-AA-1234
+    const cleanReg = rawReg.replace(/[^a-zA-Z0-9]/g, '');
+    const regNo = cleanReg.replace(/^([A-Z]{2})([0-9]{2})([A-Z]{1,2})([0-9]{4})$/i, '$1-$2-$3-$4').toUpperCase();
+
+    if (maxLoad <= 0) {
+      toast('Max load capacity must be greater than 0 kg.', 'error');
+      return;
+    }
+    if (parseFloat(formOdometer) < 0) {
+      toast('Odometer reading cannot be negative.', 'error');
+      return;
+    }
+    if (parseFloat(formAcquisitionCost) < 0) {
+      toast('Acquisition cost cannot be negative.', 'error');
+      return;
+    }
+
+    // Unique check
     const duplicate = vehicles.find(v => v.regNo === regNo && v.id !== editId);
     if (duplicate) {
       setRegNoErr('This registration number already exists!');
@@ -127,25 +152,20 @@ export default function Vehicles({ vehicles, setVehicles, currentUser, toast, co
     }
     setRegNoErr('');
 
-    let updatedVehicles;
-    if (editId) {
-      updatedVehicles = vehicles.map(v =>
-        v.id === editId
-          ? { ...v, regNo, name, type, maxLoad, odometer, acquisitionCost, region, status }
-          : v
-      );
-      toast(`Vehicle "${name}" updated!`, 'success');
-    } else {
-      updatedVehicles = [
-        ...vehicles,
-        { id: Store.genId(), regNo, name, type, maxLoad, odometer, acquisitionCost, region, status }
-      ];
-      toast(`Vehicle "${name}" added!`, 'success');
+    try {
+      const payload = { regNo, name, type, maxLoad, odometer, acquisitionCost, region, status };
+      if (editId) {
+        await api.updateVehicle(editId, payload);
+        toast(`Vehicle "${name}" updated!`, 'success');
+      } else {
+        await api.createVehicle(payload);
+        toast(`Vehicle "${name}" added!`, 'success');
+      }
+      await refreshData();
+      closeModal();
+    } catch (err) {
+      toast(err.message, 'error');
     }
-
-    setVehicles(updatedVehicles);
-    Store.set('vehicles', updatedVehicles);
-    closeModal();
   };
 
   const handleDelete = async (id) => {
@@ -154,10 +174,13 @@ export default function Vehicles({ vehicles, setVehicles, currentUser, toast, co
     const ok = await confirmAction(`Delete vehicle "${v.name}" (${v.regNo})? This cannot be undone.`);
     if (!ok) return;
 
-    const updatedVehicles = vehicles.filter(x => x.id !== id);
-    setVehicles(updatedVehicles);
-    Store.set('vehicles', updatedVehicles);
-    toast(`Vehicle "${v.name}" deleted.`, 'warn');
+    try {
+      await api.deleteVehicle(id);
+      toast(`Vehicle "${v.name}" deleted.`, 'warn');
+      await refreshData();
+    } catch (err) {
+      toast(err.message, 'error');
+    }
   };
 
   const filteredData = getFilteredData();
