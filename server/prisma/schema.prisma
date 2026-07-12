@@ -1,8 +1,6 @@
 // This is your Prisma schema file,
 // learn more about it in the docs: https://pris.ly/d/prisma-schema
 
-// Get a free hosted Postgres database in seconds: `npx create-db`
-
 generator client {
   provider = "prisma-client"
   output   = "../generated/prisma"
@@ -12,23 +10,160 @@ datasource db {
   provider = "postgresql"
 }
 
-enum Role {
-  USER
-  ADMIN
+model Role {
+  id    Int    @id @default(autoincrement())
+  name  String @unique @db.VarChar(50)
+  users User[]
 }
 
 model User {
+  id           Int      @id @default(autoincrement())
+  name         String   @db.VarChar(100)
+  email        String   @unique @db.VarChar(255)
+  passwordHash String   @db.VarChar(255)
+  roleId       Int
+  role         Role     @relation(fields: [roleId], references: [id])
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  driver       Driver?
+}
+
+enum VehicleStatus {
+  AVAILABLE
+  ON_TRIP
+  IN_SHOP
+  RETIRED
+}
+
+model Vehicle {
+  id                 Int              @id @default(autoincrement())
+  registrationNumber String           @unique @db.VarChar(50)
+  model              String           @db.VarChar(100)
+  type               String           @db.VarChar(50)
+  maxLoadCapacity    Float
+  odometer           Float
+  acquisitionCost    Decimal          @db.Decimal(12, 2)
+  status             VehicleStatus    @default(AVAILABLE)
+  region             String?          @db.VarChar(100)
+  createdAt          DateTime         @default(now())
+  updatedAt          DateTime         @updatedAt
+  trips              Trip[]
+  maintenanceLogs    MaintenanceLog[]
+  fuelLogs           FuelLog[]
+  expenses           Expense[]
+
+  @@index([status])
+  @@index([region])
+}
+
+enum DriverStatus {
+  AVAILABLE
+  ON_TRIP
+  OFF_DUTY
+  SUSPENDED
+}
+
+model Driver {
+  id                Int          @id @default(autoincrement())
+  name              String       @db.VarChar(100)
+  licenseNumber     String       @unique @db.VarChar(50)
+  licenseCategory   String       @db.VarChar(20)
+  licenseExpiryDate DateTime
+  contactNumber     String       @db.VarChar(20)
+  safetyScore       Float        @default(100.0)
+  status            DriverStatus @default(AVAILABLE)
+  userId            Int?         @unique
+  user              User?        @relation(fields: [userId], references: [id], onDelete: SetNull)
+  createdAt         DateTime     @default(now())
+  updatedAt         DateTime     @updatedAt
+  trips             Trip[]
+
+  @@index([status])
+  @@index([licenseExpiryDate])
+}
+
+enum TripStatus {
+  DRAFT
+  DISPATCHED
+  COMPLETED
+  CANCELLED
+}
+
+model Trip {
+  id              Int        @id @default(autoincrement())
+  source          String     @db.VarChar(255)
+  destination     String     @db.VarChar(255)
+  vehicleId       Int
+  vehicle         Vehicle    @relation(fields: [vehicleId], references: [id], onDelete: Restrict)
+  driverId        Int
+  driver          Driver     @relation(fields: [driverId], references: [id], onDelete: Restrict)
+  cargoWeight     Float
+  plannedDistance Float
+  revenue         Decimal    @default(0.0) @db.Decimal(12, 2)
+  finalOdometer   Float?
+  fuelConsumed    Float?
+  status          TripStatus @default(DRAFT)
+  createdAt       DateTime   @default(now())
+  updatedAt       DateTime   @updatedAt
+  fuelLogs        FuelLog[]
+  expenses        Expense[]
+
+  @@index([status])
+  @@index([vehicleId])
+  @@index([driverId])
+  @@index([createdAt])
+}
+
+enum MaintenanceStatus {
+  ACTIVE
+  COMPLETED
+}
+
+model MaintenanceLog {
+  id          Int               @id @default(autoincrement())
+  vehicleId   Int
+  vehicle     Vehicle           @relation(fields: [vehicleId], references: [id], onDelete: Cascade)
+  description String            @db.VarChar(255)
+  cost        Decimal           @db.Decimal(12, 2)
+  startDate   DateTime          @default(now())
+  endDate     DateTime?
+  status      MaintenanceStatus @default(ACTIVE)
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
+
+  @@index([status])
+  @@index([vehicleId])
+}
+
+model FuelLog {
   id        Int      @id @default(autoincrement())
-
-  name      String   @db.VarChar(100)
-
-  email     String   @unique @db.VarChar(255)
-
-  password  String   @db.VarChar(255)
-
-  role      Role     @default(USER)
-
+  vehicleId Int
+  vehicle   Vehicle  @relation(fields: [vehicleId], references: [id], onDelete: Cascade)
+  tripId    Int?
+  trip      Trip?    @relation(fields: [tripId], references: [id], onDelete: SetNull)
+  liters    Float
+  totalCost Decimal  @db.Decimal(12, 2)
+  date      DateTime @default(now())
   createdAt DateTime @default(now())
-
   updatedAt DateTime @updatedAt
+}
+
+enum ExpenseCategory {
+  TOLL
+  FINE
+  OTHER
+}
+
+model Expense {
+  id          Int             @id @default(autoincrement())
+  vehicleId   Int?
+  vehicle     Vehicle?        @relation(fields: [vehicleId], references: [id], onDelete: SetNull)
+  tripId      Int?
+  trip        Trip?           @relation(fields: [tripId], references: [id], onDelete: SetNull)
+  category    ExpenseCategory
+  amount      Decimal         @db.Decimal(12, 2)
+  description String          @db.VarChar(255)
+  date        DateTime        @default(now())
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
 }
