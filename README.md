@@ -399,7 +399,7 @@ Recommended:
 ## 1. Clone the Repository
 
 ```bash
-git clone YOUR_REPOSITORY_URL
+git clone https://github.com/Sandeep-12pcm/TransitOps.git
 ```
 
 Move into the project:
